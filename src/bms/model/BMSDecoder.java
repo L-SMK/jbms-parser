@@ -132,6 +132,7 @@ public class BMSDecoder extends ChartDecoder {
 			crandom.clear();
 
 			skip.clear();
+			final List<String> baseDependentHeaders = new ArrayList<String>();
 			while ((line = br.readLine()) != null) {
 				if (line.length() < 2) {
 					continue;
@@ -178,7 +179,6 @@ public class BMSDecoder extends ChartDecoder {
 						}
 					} else if (skip.isEmpty() || !skip.getLast()) {
 						final char c = line.charAt(1);
-						final int base = model.getBase();
 						if ('0' <= c && c <= '9' && line.length() > 6) {
 							// line = line.toUpperCase();
 							// 楽譜
@@ -210,89 +210,19 @@ public class BMSDecoder extends ChartDecoder {
 									log.add(new DecodeLog(WARNING, "#BPMに数字が定義されていません : " + line));
 								}
 							} else {
-								try {
-									double bpm = Double.parseDouble(line.substring(7).trim());
-									if(bpm > 0) {
-										if(base == 62) {
-											bpmtable.put(ChartDecoder.parseInt62(line, 4), bpm);
-										} else {
-											bpmtable.put(ChartDecoder.parseInt36(line, 4), bpm);
-										}
-									} else {
-										log.add(new DecodeLog(WARNING, "#negative BPMはサポートされていません : " + line));
-									}
-								} catch (NumberFormatException e) {
-									log.add(new DecodeLog(WARNING, "#BPMxxに数字が定義されていません : " + line));
-								}
+								baseDependentHeaders.add(line);
 							}
 						} else if (matchesReserveWord(line, "WAV")) {
-							// 音源ファイル
-							if (line.length() >= 8) {
-								try {
-									final String file_name = line.substring(7).trim().replace('\\', '/');
-									if(base == 62) {
-										wm[ChartDecoder.parseInt62(line, 4)] = wavlist.size();
-									} else {
-										wm[ChartDecoder.parseInt36(line, 4)] = wavlist.size();
-									}
-									wavlist.add(file_name);
-								} catch (NumberFormatException e) {
-									log.add(new DecodeLog(WARNING, "#WAVxxは不十分な定義です : " + line));
-								}
-							} else {
-								log.add(new DecodeLog(WARNING, "#WAVxxは不十分な定義です : " + line));
-							}
+							baseDependentHeaders.add(line);
 						} else if (matchesReserveWord(line, "BMP")) {
-							// BGAファイル
-							if (line.length() >= 8) {
-								try {
-									final String file_name = line.substring(7).trim().replace('\\', '/');
-									if(base == 62) {
-										bm[ChartDecoder.parseInt62(line, 4)] = bgalist.size();
-									} else {
-										bm[ChartDecoder.parseInt36(line, 4)] = bgalist.size();
-									}
-									bgalist.add(file_name);
-								} catch (NumberFormatException e) {
-									log.add(new DecodeLog(WARNING, "#BMPxxは不十分な定義です : " + line));
-								}
-							} else {
-								log.add(new DecodeLog(WARNING, "#BMPxxは不十分な定義です : " + line));
-							}
+							baseDependentHeaders.add(line);
 						} else if (matchesReserveWord(line, "STOP")) {
-							if (line.length() >= 9) {
-								try {
-									double stop = Double.parseDouble(line.substring(8).trim()) / 192;
-									if(stop < 0) {
-										stop = Math.abs(stop);
-										log.add(new DecodeLog(WARNING, "#negative STOPはサポートされていません : " + line));
-									}
-									if(base == 62) {
-										stoptable.put(ChartDecoder.parseInt62(line, 5), stop);
-									} else {
-										stoptable.put(ChartDecoder.parseInt36(line, 5), stop);
-									}
-								} catch (NumberFormatException e) {
-									log.add(new DecodeLog(WARNING, "#STOPxxに数字が定義されていません : " + line));
-								}
-							} else {
-								log.add(new DecodeLog(WARNING, "#STOPxxは不十分な定義です : " + line));
-							}
+							baseDependentHeaders.add(line);
 						} else if (matchesReserveWord(line, "SCROLL")) {
-							if (line.length() >= 11) {
-								try {
-									double scroll = Double.parseDouble(line.substring(10).trim());
-									if(base == 62) {
-										scrolltable.put(ChartDecoder.parseInt62(line, 7), scroll);
-									} else {
-										scrolltable.put(ChartDecoder.parseInt36(line, 7), scroll);
-									}
-								} catch (NumberFormatException e) {
-									log.add(new DecodeLog(WARNING, "#SCROLLxxに数字が定義されていません : " + line));
-								}
-							} else {
-								log.add(new DecodeLog(WARNING, "#SCROLLxxは不十分な定義です : " + line));
-							}
+							baseDependentHeaders.add(line);
+						} else if (line.length() > CommandWord.LNOBJ.name().length() + 2
+								&& matchesReserveWord(line, CommandWord.LNOBJ.name())) {
+							baseDependentHeaders.add(line);
 						} else {
 							for (CommandWord cw : commandWords) {
 								if (line.length() > cw.name().length() + 2 && matchesReserveWord(line, cw.name())) {
@@ -317,6 +247,10 @@ public class BMSDecoder extends ChartDecoder {
 						model.getValues().put(line.substring(1, index), line.substring(index + 1));
 					}
 				}
+			}
+
+			for (String header : baseDependentHeaders) {
+				processBaseDependentHeader(model, header);
 			}
 			
 			model.setWavList(wavlist.toArray(new String[wavlist.size()]));
@@ -408,6 +342,101 @@ public class BMSDecoder extends ChartDecoder {
 			e.printStackTrace();
 		}
 		return null;
+	}
+
+	private void processBaseDependentHeader(BMSModel model, String line) {
+		final int base = model.getBase();
+		if (matchesReserveWord(line, "BPM")) {
+			try {
+				double bpm = Double.parseDouble(line.substring(7).trim());
+				if(bpm > 0) {
+					if(base == 62) {
+						bpmtable.put(ChartDecoder.parseInt62(line, 4), bpm);
+					} else {
+						bpmtable.put(ChartDecoder.parseInt36(line, 4), bpm);
+					}
+				} else {
+					log.add(new DecodeLog(WARNING, "#negative BPMはサポートされていません : " + line));
+				}
+			} catch (NumberFormatException e) {
+				log.add(new DecodeLog(WARNING, "#BPMxxに数字が定義されていません : " + line));
+			}
+		} else if (matchesReserveWord(line, "WAV")) {
+			// 音源ファイル
+			if (line.length() >= 8) {
+				try {
+					final String file_name = line.substring(7).trim().replace('\\', '/');
+					if(base == 62) {
+						wm[ChartDecoder.parseInt62(line, 4)] = wavlist.size();
+					} else {
+						wm[ChartDecoder.parseInt36(line, 4)] = wavlist.size();
+					}
+					wavlist.add(file_name);
+				} catch (NumberFormatException e) {
+					log.add(new DecodeLog(WARNING, "#WAVxxは不十分な定義です : " + line));
+				}
+			} else {
+				log.add(new DecodeLog(WARNING, "#WAVxxは不十分な定義です : " + line));
+			}
+		} else if (matchesReserveWord(line, "BMP")) {
+			// BGAファイル
+			if (line.length() >= 8) {
+				try {
+					final String file_name = line.substring(7).trim().replace('\\', '/');
+					if(base == 62) {
+						bm[ChartDecoder.parseInt62(line, 4)] = bgalist.size();
+					} else {
+						bm[ChartDecoder.parseInt36(line, 4)] = bgalist.size();
+					}
+					bgalist.add(file_name);
+				} catch (NumberFormatException e) {
+					log.add(new DecodeLog(WARNING, "#BMPxxは不十分な定義です : " + line));
+				}
+			} else {
+				log.add(new DecodeLog(WARNING, "#BMPxxは不十分な定義です : " + line));
+			}
+		} else if (matchesReserveWord(line, "STOP")) {
+			if (line.length() >= 9) {
+				try {
+					double stop = Double.parseDouble(line.substring(8).trim()) / 192;
+					if(stop < 0) {
+						stop = Math.abs(stop);
+						log.add(new DecodeLog(WARNING, "#negative STOPはサポートされていません : " + line));
+					}
+					if(base == 62) {
+						stoptable.put(ChartDecoder.parseInt62(line, 5), stop);
+					} else {
+						stoptable.put(ChartDecoder.parseInt36(line, 5), stop);
+					}
+				} catch (NumberFormatException e) {
+					log.add(new DecodeLog(WARNING, "#STOPxxに数字が定義されていません : " + line));
+				}
+			} else {
+				log.add(new DecodeLog(WARNING, "#STOPxxは不十分な定義です : " + line));
+			}
+		} else if (matchesReserveWord(line, "SCROLL")) {
+			if (line.length() >= 11) {
+				try {
+					double scroll = Double.parseDouble(line.substring(10).trim());
+					if(base == 62) {
+						scrolltable.put(ChartDecoder.parseInt62(line, 7), scroll);
+					} else {
+						scrolltable.put(ChartDecoder.parseInt36(line, 7), scroll);
+					}
+				} catch (NumberFormatException e) {
+					log.add(new DecodeLog(WARNING, "#SCROLLxxに数字が定義されていません : " + line));
+				}
+			} else {
+				log.add(new DecodeLog(WARNING, "#SCROLLxxは不十分な定義です : " + line));
+			}
+		} else if (matchesReserveWord(line, CommandWord.LNOBJ.name())) {
+			final DecodeLog decodeLog = CommandWord.LNOBJ.function.apply(model,
+					line.substring(CommandWord.LNOBJ.name().length() + 2).trim());
+			if (decodeLog != null) {
+				log.add(decodeLog);
+				Logger.getGlobal().warning(model.getTitle() + " - " + decodeLog.getMessage() + " : " + line);
+			}
+		}
 	}
 
 	private boolean matchesReserveWord(String line, String s) {
