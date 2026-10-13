@@ -25,6 +25,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  * @author exch
  */
 public class BMSONDecoder extends ChartDecoder {
+    public static final String FORMAT_MARKER = "bmsir.format.bmson";
 
 	private final ObjectMapper mapper = new ObjectMapper();
 
@@ -48,6 +49,7 @@ public class BMSONDecoder extends ChartDecoder {
 		final long currnttime = System.currentTimeMillis();
 		// BMS読み込み、ハッシュ値取得
 		model = new BMSModel();
+        model.getValues().put(FORMAT_MARKER, "1");
 		Bmson bmson = null;
 		try {
 			MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -401,6 +403,11 @@ public class BMSONDecoder extends ChartDecoder {
 			}
 			if (bmson.bga.layer_events != null) {
 				for (BNote n : bmson.bga.layer_events) {
+                    if (n.condition == null && n.id_set == null && !seqmap.containsKey(n.id)) {
+                        Integer layerId = idmap.get(n.id);
+                        if (layerId != null) getTimeLine(n.y, resolution).setLayer(layerId);
+                        continue;
+                    }
 					int[] idset = n.id_set != null ? n.id_set : new int[] {n.id};
 					Layer.Sequence[][] seqs = new Layer.Sequence[idset.length][];
 					Layer.Event event = null;

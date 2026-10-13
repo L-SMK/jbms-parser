@@ -84,7 +84,7 @@ public class Section {
 				break;
 			// 小節の拡大率
 			case SECTION_RATE:
-				int colon_index = line.indexOf(":");
+				int colon_index = dataStart(line) - 1;
 				try {
 					rate = Double.valueOf(line.substring(colon_index + 1, line.length()));					
 				} catch (NumberFormatException e) {
@@ -185,9 +185,23 @@ public class Section {
 		}
 	}
 	
+    private int dataStart(String line) {
+        int colon = line.indexOf(':');
+        if (colon >= 0) return colon + 1;
+        // BM98-era charts use whitespace after #mmmcc. Keep the original bytes/hash.
+        if (line.length() > 6 && Character.isWhitespace(line.charAt(6))) {
+            model.getValues().put(BMSDecoder.COMPATIBILITY_AFFECTED, "1");
+            if ("1".equals(model.getValues().get(BMSDecoder.COMPATIBILITY_REVISION))) return 0;
+            int start = 6;
+            while (start < line.length() && Character.isWhitespace(line.charAt(start))) start++;
+            return start;
+        }
+        return 0; // Unverified delimiter-less syntax retains its historical behavior.
+    }
+
 	private int[] splitData(String line) {
 		final int base = model.getBase();
-		final int findex = line.indexOf(":") + 1;
+		final int findex = dataStart(line);
 		final int lindex = line.length();
 		final int split = (lindex - findex) / 2;
 		int[] result = new int[split];
@@ -207,7 +221,7 @@ public class Section {
 	
 	private void processData(String line, DataProcessor processor) {
 		final int base = model.getBase();
-		final int findex = line.indexOf(":") + 1;
+		final int findex = dataStart(line);
 		final int lindex = line.length();
 		final int split = (lindex - findex) / 2;
 		int result;
@@ -372,6 +386,12 @@ public class Section {
 									startln[key] = null;
 									break;
 								} else {
+                                    if (note instanceof LongNote && ((LongNote)note).isEnd()) {
+                                        model.getValues().put(BMSDecoder.COMPATIBILITY_AFFECTED, "1");
+                                        if (!"1".equals(model.getValues().get(BMSDecoder.COMPATIBILITY_REVISION))) {
+                                            tl.setNote(key, new NormalNote(wavmap[data]));
+                                        }
+                                    }
 									log.add(new DecodeLog(WARNING, "LNオブジェクトの対応が取れません。レーン: " + key
 											+ " - Time(ms):" + tl2.getTime()));
 									break;

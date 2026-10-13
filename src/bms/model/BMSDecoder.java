@@ -18,6 +18,11 @@ import static bms.model.DecodeLog.State.*;
  * @author exch
  */
 public class BMSDecoder extends ChartDecoder {
+    public static final String COMPATIBILITY_REVISION = "bmsir.parser.revision";
+    public static final String COMPATIBILITY_AFFECTED = "bmsir.parser.affected";
+    private boolean legacyCompatibility;
+    /** Only replay restoration should request the historical interpretation. */
+    public void setLegacyCompatibility(boolean legacy) { legacyCompatibility = legacy; }
 
 	final List<String> wavlist = new ArrayList<String>(62 * 62);
 	private final int[] wm = new int[62 * 62];
@@ -133,12 +138,19 @@ public class BMSDecoder extends ChartDecoder {
 
 			skip.clear();
 			final List<String> baseDependentHeaders = new ArrayList<String>();
+            boolean whitespaceSyntax = false, conditionalSource = false, lnobjSource = false;
 			while ((line = br.readLine()) != null) {
 				if (line.length() < 2) {
 					continue;
 				}
 
-				if(line.charAt(0) == '#') {
+                // Inspect all source branches: local identity must not depend on selected RANDOM.
+                if (line.charAt(0) == '#') {
+                    if (line.length() > 6 && Character.isDigit(line.charAt(1))
+                            && Character.isDigit(line.charAt(2)) && Character.isDigit(line.charAt(3))
+                            && line.indexOf(':') < 0 && Character.isWhitespace(line.charAt(6))) whitespaceSyntax = true;
+                    conditionalSource |= matchesReserveWord(line, "RANDOM") || matchesReserveWord(line, "IF");
+                    lnobjSource |= matchesReserveWord(line, "LNOBJ");
 					// line = line.substring(1, line.length());
 					// RANDOM制御系
 					if (matchesReserveWord(line, "RANDOM")) {
@@ -256,6 +268,14 @@ public class BMSDecoder extends ChartDecoder {
 			model.setWavList(wavlist.toArray(new String[wavlist.size()]));
 			model.setBgaList(bgalist.toArray(new String[bgalist.size()]));
 
+            // Decoder-owned metadata cannot be supplied by authored @values.
+            model.getValues().put(COMPATIBILITY_REVISION, legacyCompatibility ? "1" : "2");
+            model.getValues().remove(COMPATIBILITY_AFFECTED);
+            // Conditional LNOBJ charts are conservatively isolated without enumerating branches.
+            if (whitespaceSyntax || (conditionalSource && lnobjSource)) {
+                model.getValues().put(COMPATIBILITY_AFFECTED, "1");
+            }
+            model.getValues().remove("bmsir.format.bmson");
 			Section prev = null;
 			Section[] sections = new Section[maxsec + 1];
 			for (int i = 0; i <= maxsec; i++) {
@@ -269,6 +289,10 @@ public class BMSDecoder extends ChartDecoder {
 			LongNote[] lnendstatus = new LongNote[model.getMode().key];
 			final TimeLine basetl = new TimeLine(0, 0, model.getMode().key);
 			basetl.setBPM(model.getBpm());
+            if (bm[0] >= 0) {
+                basetl.setEventlayer(new Layer[]{new Layer(new Layer.Event(Layer.EventType.MISS, 1),
+                        new Layer.Sequence[][]{{new Layer.Sequence(0, bm[0]), new Layer.Sequence(500)}})});
+            }
 			timelines.put(0.0, new TimeLineCache(0.0, basetl));
 			for (Section section : sections) {
 				section.makeTimeLines(wm, bm, timelines, lnlist, lnendstatus);
