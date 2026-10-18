@@ -350,12 +350,14 @@ public class Section {
 					if (data == lnobj) {
 						// LN終端処理
 						// TODO 高速化のために直前のノートを記録しておく
+                        boolean previousVisibleNote = false;
 						for (Map.Entry<Double, TimeLineCache> e : tlcache.descendingMap().entrySet()) {
 							if(e.getKey() >= tl.getSection() ) {
 								continue;
 							}
 							final TimeLine tl2 = e.getValue().timeline;
 							if (tl2.existNote(key)) {
+                                previousVisibleNote = true;
 								final Note note = tl2.getNote(key);
 								if (note instanceof NormalNote) {
 									// LNOBJの直前のノートをLNに差し替える
@@ -388,6 +390,7 @@ public class Section {
 								} else {
                                     if (note instanceof LongNote && ((LongNote)note).isEnd()) {
                                         model.getValues().put(BMSDecoder.COMPATIBILITY_AFFECTED, "1");
+                                        model.getValues().put(BMSDecoder.V2_AFFECTED, "1");
                                         if (!"1".equals(model.getValues().get(BMSDecoder.COMPATIBILITY_REVISION))) {
                                             tl.setNote(key, new NormalNote(wavmap[data]));
                                         }
@@ -398,6 +401,11 @@ public class Section {
 								}
 							}
 						}
+                        if (!previousVisibleNote && "3".equals(model.getValues().get(BMSDecoder.COMPATIBILITY_REVISION))) {
+                            model.getValues().put(BMSDecoder.ORPHAN_LNOBJ_AFFECTED, "1");
+                            model.getValues().put(BMSDecoder.COMPATIBILITY_AFFECTED, "1");
+                            tl.setNote(key, new NormalNote(wavmap[data]));
+                        }
 					} else {
 						tl.setNote(key, new NormalNote(wavmap[data]));
 					}							

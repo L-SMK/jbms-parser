@@ -20,9 +20,15 @@ import static bms.model.DecodeLog.State.*;
 public class BMSDecoder extends ChartDecoder {
     public static final String COMPATIBILITY_REVISION = "bmsir.parser.revision";
     public static final String COMPATIBILITY_AFFECTED = "bmsir.parser.affected";
-    private boolean legacyCompatibility;
+    public static final String ORPHAN_LNOBJ_AFFECTED = "bmsir.parser.orphan_lnobj";
+    public static final String V2_AFFECTED = "bmsir.parser.v2_affected";
+    private int compatibilityRevision = 3;
     /** Only replay restoration should request the historical interpretation. */
-    public void setLegacyCompatibility(boolean legacy) { legacyCompatibility = legacy; }
+    public void setLegacyCompatibility(boolean legacy) { setCompatibilityRevision(legacy ? 1 : 3); }
+    public void setCompatibilityRevision(int revision) {
+        if (revision < 1 || revision > 3) throw new IllegalArgumentException("Unsupported parser revision");
+        compatibilityRevision = revision;
+    }
 
 	final List<String> wavlist = new ArrayList<String>(62 * 62);
 	private final int[] wm = new int[62 * 62];
@@ -269,11 +275,19 @@ public class BMSDecoder extends ChartDecoder {
 			model.setBgaList(bgalist.toArray(new String[bgalist.size()]));
 
             // Decoder-owned metadata cannot be supplied by authored @values.
-            model.getValues().put(COMPATIBILITY_REVISION, legacyCompatibility ? "1" : "2");
+            model.getValues().put(COMPATIBILITY_REVISION, Integer.toString(compatibilityRevision));
             model.getValues().remove(COMPATIBILITY_AFFECTED);
+            model.getValues().remove(ORPHAN_LNOBJ_AFFECTED);
+            model.getValues().remove(V2_AFFECTED);
             // Conditional LNOBJ charts are conservatively isolated without enumerating branches.
             if (whitespaceSyntax || (conditionalSource && lnobjSource)) {
                 model.getValues().put(COMPATIBILITY_AFFECTED, "1");
+                model.getValues().put(V2_AFFECTED, "1");
+            }
+            // Keep every RANDOM branch in one storage namespace even when only
+            // one branch begins a visible lane with an unmatched LNOBJ.
+            if (conditionalSource && lnobjSource && compatibilityRevision >= 3) {
+                model.getValues().put(ORPHAN_LNOBJ_AFFECTED, "1");
             }
             model.getValues().remove("bmsir.format.bmson");
 			Section prev = null;
